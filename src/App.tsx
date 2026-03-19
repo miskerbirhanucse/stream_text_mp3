@@ -17,7 +17,7 @@
     error?: string;
   }
 
-  const MAX_CHARS = 1900;
+  // const MAX_CHARS = 1900;
 
   export function App() {
     const [inputText, setInputText] = useState<string>("");
@@ -43,12 +43,12 @@
     const abortControllerRef = useRef<AbortController | null>(null);
 
     // Get authorization header based on auth method
-    const getAuthHeader = useCallback(() => {
-      if (useBasicAuth) {
-        return apiKey;
-      }
-      return `Bearer ${jwtToken}`;
-    }, [useBasicAuth, apiKey, jwtToken]);
+    // const getAuthHeader = useCallback(() => {
+    //   if (useBasicAuth) {
+    //     return apiKey;
+    //   }
+    //   return `Bearer ${jwtToken}`;
+    // }, [useBasicAuth, apiKey, jwtToken]);
 
     // Fetch voices from API
     // const fetchVoices = useCallback(async () => {
