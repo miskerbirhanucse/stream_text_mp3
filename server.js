@@ -7,6 +7,9 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 app.use(
   cors({
     origin: ['http://localhost:5173', 'http://localhost:5174'],
@@ -137,6 +140,18 @@ app.post('/api/tts', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve React app for all non-API routes
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 const PORT = process.env.PORT || 3001;
 
 const server = app.listen(PORT, '0.0.0.0', () => {
