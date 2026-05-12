@@ -6,3 +6,5 @@
 
 # for killing already running port use ` kill -9 $(lsof -t -i:5173)  this is for vite app 
 # for server.js or node you can use    lsof -ti :3001 | xargs kill -9    
+
+# if you want to update the tree structure of the code use this code tree -I "node_modules|.git|.next|out|dist" > tree.txt   
