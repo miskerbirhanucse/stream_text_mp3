@@ -16,10 +16,13 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
 
-const AUTH_HEADER = `Basic ${process.env.INWORLD_API_KEY}`;
+const rawInworldKey = process.env.INWORLD_API_KEY?.trim() || '';
 
+const AUTH_HEADER = rawInworldKey.startsWith('Basic ')
+  ? rawInworldKey
+  : `Basic ${rawInworldKey}`;
 // PROXY: GET /api/voices
 app.get('/api/voices', async (req, res) => {
 
@@ -49,6 +52,144 @@ app.get('/api/voices', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// PROXY: POST /api/voices/clone
+app.post('/api/voices/clone', async (req, res) => {
+  try {
+    if (!rawInworldKey) {
+      return res.status(500).json({
+        error: 'INWORLD_API_KEY is missing from the server environment',
+      });
+    }
+
+    const {
+      displayName,
+      langCode = 'EN_US',
+      audioData,
+      fileName,
+      transcription = '',
+      description = '',
+      removeBackgroundNoise = true,
+      permissionConfirmed = false,
+    } = req.body || {};
+
+    if (!permissionConfirmed) {
+      return res.status(400).json({
+        error: 'Voice-owner permission must be confirmed',
+      });
+    }
+
+    if (!displayName?.trim()) {
+      return res.status(400).json({
+        error: 'Voice name is required',
+      });
+    }
+
+    if (!audioData || typeof audioData !== 'string') {
+      return res.status(400).json({
+        error: 'Audio sample is required',
+      });
+    }
+
+    const allowedExtensions = new Set(['.wav', '.mp3', '.webm']);
+    const extension = path.extname(fileName || '').toLowerCase();
+
+    if (!allowedExtensions.has(extension)) {
+      return res.status(400).json({
+        error: 'Only WAV, MP3, and WebM files are supported',
+      });
+    }
+
+    // Accept either plain Base64 or a browser data URL.
+    const base64Audio = audioData
+      .replace(/^data:[^;]+;base64,/, '')
+      .replace(/\s/g, '');
+
+    const audioBuffer = Buffer.from(base64Audio, 'base64');
+
+    if (!audioBuffer.length) {
+      return res.status(400).json({
+        error: 'The audio sample is empty or invalid',
+      });
+    }
+
+    const maxFileSize = 4 * 1024 * 1024;
+
+    if (audioBuffer.length > maxFileSize) {
+      return res.status(400).json({
+        error: 'The audio sample must be 4 MB or smaller',
+      });
+    }
+
+    const voiceSample = {
+      audioData: base64Audio,
+    };
+
+    if (transcription.trim()) {
+      voiceSample.transcription = transcription.trim();
+    }
+
+    const payload = {
+      displayName: displayName.trim(),
+      langCode,
+      voiceSamples: [voiceSample],
+      description:
+        description.trim() || `Cloned voice: ${displayName.trim()}`,
+      tags: ['clone'],
+      audioProcessingConfig: {
+        removeBackgroundNoise: Boolean(removeBackgroundNoise),
+      },
+    };
+
+    const response = await fetch(
+      'https://api.inworld.ai/voices/v1/voices:clone',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: AUTH_HEADER,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const rawResponse = await response.text();
+
+    let data;
+
+    try {
+      data = JSON.parse(rawResponse);
+    } catch {
+      data = { message: rawResponse };
+    }
+
+    if (!response.ok) {
+      console.error('Voice cloning failed:', response.status, data);
+
+      return res.status(response.status).json({
+        error: 'Voice cloning failed',
+        details: data,
+      });
+    }
+
+    // Do not send the large validated Base64 audio back to the browser.
+    const validationResults = Array.isArray(data.audioSamplesValidated)
+      ? data.audioSamplesValidated.map(({ audioData: _, ...result }) => result)
+      : [];
+
+    return res.json({
+      voice: data.voice,
+      audioSamplesValidated: validationResults,
+    });
+  } catch (error) {
+    console.error('Voice cloning proxy error:', error);
+
+    return res.status(500).json({
+      error: 'Internal server error while cloning the voice',
+    });
+  }
+});
+
 
 // PROXY: POST /api/tts
 // app.post('/api/tts', async (req, res) => {
