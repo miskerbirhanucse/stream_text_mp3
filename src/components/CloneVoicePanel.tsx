@@ -1,4 +1,5 @@
-import { FormEvent, useState } from "react";
+import { useState } from "react";
+import type { FormEvent } from "react";
 
 export interface ClonedVoice {
   voiceId: string;
@@ -11,6 +12,7 @@ export interface ClonedVoice {
 }
 
 interface CloneVoicePanelProps {
+  authorization: string;
   onCreated: (voice: ClonedVoice) => void;
 }
 
@@ -54,7 +56,10 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
+export function CloneVoicePanel({
+  authorization,
+  onCreated,
+}: CloneVoicePanelProps) {
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [langCode, setLangCode] = useState("EN_US");
@@ -62,16 +67,19 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [removeBackgroundNoise, setRemoveBackgroundNoise] = useState(true);
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
-
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
     setError("");
     setSuccess("");
+
+    if (!authorization) {
+      setError("Enter your Inworld API credential before cloning.");
+      return;
+    }
 
     if (!displayName.trim()) {
       setError("Enter a name for the cloned voice.");
@@ -96,7 +104,9 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
     }
 
     if (!permissionConfirmed) {
-      setError("Confirm that you own the voice or have explicit permission.");
+      setError(
+        "Confirm that you own the voice or have explicit permission to clone it.",
+      );
       return;
     }
 
@@ -108,6 +118,7 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
       const response = await fetch("/api/voices/clone", {
         method: "POST",
         headers: {
+          Authorization: authorization,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -142,9 +153,7 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
       }
 
       onCreated(data.voice);
-
       setSuccess(`"${data.voice.displayName}" was cloned and selected.`);
-
       setDisplayName("");
       setDescription("");
       setTranscription("");
@@ -168,9 +177,9 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
     >
       <div className="mb-4">
         <h2 className="font-semibold text-slate-800">Create Cloned Voice</h2>
-
         <p className="mt-1 text-xs text-slate-500">
-          Upload a clean 10–15 second recording without music or sound effects.
+          Enter your API credential below first, then upload a clean 10–15
+          second recording without music or sound effects.
         </p>
       </div>
 
@@ -179,7 +188,6 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             Voice name
           </label>
-
           <input
             type="text"
             value={displayName}
@@ -193,7 +201,6 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             Language
           </label>
-
           <select
             value={langCode}
             onChange={(event) => setLangCode(event.target.value)}
@@ -211,14 +218,15 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             Audio sample
           </label>
-
           <input
+            key={audioFile?.name || "empty-audio"}
             type="file"
             accept=".wav,.mp3,.webm,audio/wav,audio/mpeg,audio/webm"
-            onChange={(event) => setAudioFile(event.target.files?.[0] || null)}
+            onChange={(event) =>
+              setAudioFile(event.target.files?.[0] || null)
+            }
             className="block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-600"
           />
-
           <p className="mt-1 text-xs text-slate-500">
             WAV, MP3 or WebM. Maximum 4 MB.
           </p>
@@ -228,16 +236,14 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             Exact words spoken
           </label>
-
           <textarea
             value={transcription}
             onChange={(event) => setTranscription(event.target.value)}
-            placeholder="Write exactly what is being said in the recording."
+            placeholder="Write exactly what is said in the recording."
             className="h-20 w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
-
           <p className="mt-1 text-xs text-slate-500">
-            Optional, but improves cloning quality.
+            Optional, but it can improve cloning quality.
           </p>
         </div>
 
@@ -245,7 +251,6 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             Description
           </label>
-
           <input
             type="text"
             value={description}
@@ -259,7 +264,9 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <input
             type="checkbox"
             checked={removeBackgroundNoise}
-            onChange={(event) => setRemoveBackgroundNoise(event.target.checked)}
+            onChange={(event) =>
+              setRemoveBackgroundNoise(event.target.checked)
+            }
             className="mt-1"
           />
           Remove background noise
@@ -269,10 +276,12 @@ export function CloneVoicePanel({ onCreated }: CloneVoicePanelProps) {
           <input
             type="checkbox"
             checked={permissionConfirmed}
-            onChange={(event) => setPermissionConfirmed(event.target.checked)}
+            onChange={(event) =>
+              setPermissionConfirmed(event.target.checked)
+            }
             className="mt-1"
           />
-          I confirm that this is my voice or I have explicit permission from the
+          I confirm this is my voice or I have explicit permission from the
           voice owner to clone and use it.
         </label>
 

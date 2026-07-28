@@ -22,17 +22,7 @@ interface Chunk {
 
 export function App() {
   const [inputText, setInputText] = useState<string>("");
-
-  // JWT Authentication
-  const [jwtToken, setJwtToken] = useState<string>("");
-  const [workspaceId, setWorkspaceId] = useState<string>(
-    "default-oxqw6yz59ix893entop-lw",
-  );
-
-  // Legacy Basic Auth (fallback)
-  const [apiKey, setApiKey] = useState<string>(
-    "");
-  const [useBasicAuth, setUseBasicAuth] = useState<boolean>(false);
+  const [apiKey, setApiKey] = useState<string>("");
 
   const [voiceId, setVoiceId] = useState<string>("");
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -46,70 +36,15 @@ export function App() {
   const [modelId, setModelId] = useState<string>("inworld-tts-1.5-max");
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Get authorization header based on auth method
-  // const getAuthHeader = useCallback(() => {
-  //   if (useBasicAuth) {
-  //     return apiKey;
-  //   }
-  //   return `Bearer ${jwtToken}`;
-  // }, [useBasicAuth, apiKey, jwtToken]);
+  const getAuthHeader = useCallback(() => {
+    const credential = apiKey.trim();
 
-  // Fetch voices from API
-  // const fetchVoices = useCallback(async () => {
-  //   // Check if we have authentication
-  //   if (useBasicAuth && !apiKey) {
-  //     setVoicesError("Please enter an API key");
-  //     return;
-  //   }
-  //   if (!useBasicAuth && !jwtToken) {
-  //     setVoicesError("Please enter a JWT token");
-  //     return;
-  //   }
-  //   if (!workspaceId) {
-  //     setVoicesError("Please enter a Workspace ID");
-  //     return;
-  //   }
+    if (!credential) return "";
 
-  //   setLoadingVoices(true);
-  //   setVoicesError("");
-
-  //   try {
-  //     // Use proxy URL
-  //     const url = `/api/voices/v1/workspaces/${workspaceId}/voices`;
-
-  //     const response = await fetch(url, {
-  //       method: "GET",
-  //       headers: {
-  //         "Authorization": getAuthHeader(),
-  //         "Content-Type": "application/json",
-  //       },
-  //     });
-
-  //     if (!response.ok) {
-  //       if (response.status === 401) {
-  //         throw new Error("Unauthorized - Check your JWT token or API key");
-  //       }
-  //       throw new Error(`Failed to fetch voices: ${response.status}`);
-  //     }
-
-  //     const data = await response.json();
-  //     if (data.voices && Array.isArray(data.voices)) {
-  //       setVoices(data.voices);
-  //       // Auto-select first voice if none selected
-  //       if (data.voices.length > 0 && !voiceId) {
-  //         setVoiceId(data.voices[0].voiceId);
-  //       }
-  //     } else {
-  //       setVoices([]);
-  //       setVoicesError("No voices found in response");
-  //     }
-  //   } catch (error) {
-  //     console.error("Error fetching voices:", error);
-  //     setVoicesError(error instanceof Error ? error.message : "Failed to fetch voices");
-  //   } finally {
-  //     setLoadingVoices(false);
-  //   }
-  // }, [apiKey, jwtToken, workspaceId, useBasicAuth, getAuthHeader, voiceId]);
+    return credential.toLowerCase().startsWith("basic ")
+      ? credential
+      : `Basic ${credential}`;
+  }, [apiKey]);
 
   // Get selected voice details
   const selectedVoice = voices.find((v) => v.voiceId === voiceId);
@@ -227,35 +162,55 @@ export function App() {
   }, []);
   // ✅ Fetch voices — replace the fetchVoices function's fetch call
   const fetchVoices = useCallback(async () => {
+    const authorization = getAuthHeader();
+
+    if (!authorization) {
+      setVoicesError("Please enter your Inworld Base64 API credential");
+      return;
+    }
+
     setLoadingVoices(true);
     setVoicesError("");
 
     try {
-      const response = await fetch("/api/voices");
+      const response = await fetch("/api/voices", {
+        method: "GET",
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch voices: ${response.status}`);
+        throw new Error(
+          data.details ||
+            data.error ||
+            `Failed to fetch voices: ${response.status}`,
+        );
       }
 
-      const data = await response.json();
-      if (data.voices && Array.isArray(data.voices)) {
+      if (Array.isArray(data.voices)) {
         setVoices(data.voices);
+
         if (data.voices.length > 0 && !voiceId) {
           setVoiceId(data.voices[0].voiceId);
         }
       } else {
         setVoices([]);
-        setVoicesError("No voices found in response");
+        setVoicesError("No voices found");
       }
     } catch (error) {
       console.error("Error fetching voices:", error);
+
       setVoicesError(
         error instanceof Error ? error.message : "Failed to fetch voices",
       );
     } finally {
       setLoadingVoices(false);
     }
-  }, [voiceId]);
+  }, [getAuthHeader, voiceId]);
 
   // ✅ Process chunk — replace the processChunk function's fetch call
   // const processChunk = async (chunkText: string): Promise<Blob> => {
@@ -297,10 +252,17 @@ export function App() {
   //   return new Blob([byteArray], { type: "audio/mpeg" });
   // };
   const processChunk = async (chunkText: string): Promise<Blob> => {
-    const response = await fetch('/api/tts', {
+    const authorization = getAuthHeader();
+
+    if (!authorization) {
+      throw new Error("Enter your Inworld Base64 API credential");
+    }
+
+    const response = await fetch("/api/tts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: authorization,
       },
       body: JSON.stringify({
         text: chunkText,
@@ -533,6 +495,7 @@ export function App() {
           {/* Left Panel - Input & Settings */}
           <div className="space-y-4">
             <CloneVoicePanel
+              authorization={getAuthHeader()}
               onCreated={(createdVoice) => {
                 const newVoice: Voice = {
                   voiceId: createdVoice.voiceId,
@@ -558,80 +521,22 @@ export function App() {
                 API Configuration
               </h2>
 
-              {/* Auth Method Toggle */}
-              <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 p-2">
-                <button
-                  onClick={() => setUseBasicAuth(false)}
-                  className={cn(
-                    "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    !useBasicAuth
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-600 hover:bg-slate-200",
-                  )}
-                >
-                  JWT Token (Recommended)
-                </button>
-                <button
-                  onClick={() => setUseBasicAuth(true)}
-                  className={cn(
-                    "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    useBasicAuth
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-600 hover:bg-slate-200",
-                  )}
-                >
-                  Basic Auth
-                </button>
-              </div>
-
               <div className="space-y-3">
-                {/* JWT Token Input */}
-                {!useBasicAuth && (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      JWT Token (Bearer)
-                    </label>
-                    <textarea
-                      value={jwtToken}
-                      onChange={(e) => setJwtToken(e.target.value)}
-                      className="h-20 w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    />
-                    <p className="mt-1 text-xs text-slate-500">
-                      Your backend should generate this JWT using your API Key
-                      and Secret
-                    </p>
-                  </div>
-                )}
-
-                {/* Basic Auth Input */}
-                {useBasicAuth && (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      API Key (Basic Auth Base64)
-                    </label>
-                    <input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      placeholder="Basic ZkNCbDZkUzVHRFZySUx0bjl..."
-                    />
-                  </div>
-                )}
-
-                {/* Workspace ID */}
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Workspace ID
+                    Inworld API Credential
                   </label>
                   <input
-                    type="text"
-                    value={workspaceId}
-                    onChange={(e) => setWorkspaceId(e.target.value)}
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    placeholder="your-workspace-id"
+                    placeholder="Paste your Base64 Inworld credential"
                   />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Paste the Base64 authorization credential copied from
+                    Inworld API Keys. The Basic prefix is added automatically.
+                  </p>
                 </div>
 
                 {/* Load Voices Button */}
@@ -949,12 +854,8 @@ export function App() {
                 </h2>
                 <ol className="list-inside list-decimal space-y-2 text-sm text-slate-600">
                   <li>Paste your long text (6-10 pages) in the input area</li>
-                  <li>
-                    Enter your JWT token (from your backend) or use Basic Auth
-                  </li>
-                  <li>
-                    Enter your Workspace ID and click "Load Cloned Voices"
-                  </li>
+                  <li>Enter your Inworld Base64 API credential</li>
+                  <li>Click "Load Cloned Voices"</li>
                   <li>Select your cloned voice from the dropdown</li>
                   <li>Click "Start TTS Conversion"</li>
                   <li>
